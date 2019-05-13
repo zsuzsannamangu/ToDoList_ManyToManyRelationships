@@ -1,3 +1,4 @@
+
 using System.Collections.Generic;
 using MySql.Data.MySqlClient;
 
@@ -7,10 +8,12 @@ namespace ToDoList.Models
   {
     private string _description;
     private int _id;
+    // We no longer declare _categoryId here
 
     public Item (string description, int id = 0)
     {
       _description = description;
+      // categoryId is removed from the constructor and its parameters
       _id = id;
     }
 
@@ -29,6 +32,8 @@ namespace ToDoList.Models
       return _id;
     }
 
+    // We've removed the GetCategoryId() method entirely.
+
     public static List<Item> GetAll()
     {
       List<Item> allItems = new List<Item> {};
@@ -41,6 +46,8 @@ namespace ToDoList.Models
       {
         int itemId = rdr.GetInt32(0);
         string itemDescription = rdr.GetString(1);
+        // We no longer need to read categoryIds from our items table here.
+        // Constructor below no longer includes a itemCategoryId parameter:
         Item newItem = new Item(itemDescription, itemId);
         allItems.Add(newItem);
       }
@@ -62,7 +69,7 @@ namespace ToDoList.Models
       conn.Close();
       if (conn != null)
       {
-       conn.Dispose();
+        conn.Dispose();
       }
     }
 
@@ -79,11 +86,14 @@ namespace ToDoList.Models
       var rdr = cmd.ExecuteReader() as MySqlDataReader;
       int itemId = 0;
       string itemName = "";
+      // We remove the line setting a itemCategoryId value here.
       while(rdr.Read())
       {
         itemId = rdr.GetInt32(0);
         itemName = rdr.GetString(1);
+        // We no longer read the itemCategoryId here, either.
       }
+      // Constructor below no longer includes a itemCategoryId parameter:
       Item newItem = new Item(itemName, itemId);
       conn.Close();
       if (conn != null)
@@ -101,15 +111,17 @@ namespace ToDoList.Models
       }
       else
       {
-         Item newItem = (Item) otherItem;
-         bool idEquality = this.GetId() == newItem.GetId();
-         bool descriptionEquality = this.GetDescription() == newItem.GetDescription();
-         return (idEquality && descriptionEquality);
-       }
+        Item newItem = (Item) otherItem;
+        bool idEquality = this.GetId() == newItem.GetId();
+        bool descriptionEquality = this.GetDescription() == newItem.GetDescription();
+        // We no longer compare Items' categoryIds here.
+        return (idEquality && descriptionEquality);
+      }
     }
 
     public void Save()
     {
+      // Code to declare, set, and add values to a categoryId SQL parameters has also been removed.
       MySqlConnection conn = DB.Connection();
       conn.Open();
       var cmd = conn.CreateCommand() as MySqlCommand;
@@ -147,6 +159,97 @@ namespace ToDoList.Models
       if (conn != null)
       {
         conn.Dispose();
+      }
+    }
+
+    public List<Category> GetCategories()
+    {
+      MySqlConnection conn = DB.Connection();
+      conn.Open();
+      var cmd = conn.CreateCommand() as MySqlCommand;
+      //This locates IDs for all Categorys present on the join table whose entries are associated with the ID for the Item object this method was called upon:
+      cmd.CommandText = @"SELECT category_id FROM categories_items WHERE item_id = @itemId;";
+      MySqlParameter itemIdParameter = new MySqlParameter();
+      itemIdParameter.ParameterName = "@itemId";
+      itemIdParameter.Value = _id;
+      cmd.Parameters.Add(itemIdParameter);
+      var rdr = cmd.ExecuteReader() as MySqlDataReader;
+      List<int> categoryIds = new List<int> {};
+      while(rdr.Read())
+      {
+        int categoryId = rdr.GetInt32(0);
+        categoryIds.Add(categoryId);
+      }
+      rdr.Dispose();
+      //categoryIds will be a list of IDs for all Category objects associated with the Item this method was called upon.
+      List<Category> categories = new List<Category> {};
+      //But we want to return the actual Category objects associated with these IDs, not just their numerical ID numbers! So we'll need to loop through this list of IDs to locate and return the entire Category object associated with each:
+      foreach (int categoryId in categoryIds)
+      {
+        var categoryQuery = conn.CreateCommand() as MySqlCommand;
+        categoryQuery.CommandText = @"SELECT * FROM categories WHERE id = @CategoryId;";
+        MySqlParameter categoryIdParameter = new MySqlParameter();
+        categoryIdParameter.ParameterName = "@CategoryId";
+        categoryIdParameter.Value = categoryId;
+        categoryQuery.Parameters.Add(categoryIdParameter);
+        var categoryQueryRdr = categoryQuery.ExecuteReader() as MySqlDataReader;
+        while(categoryQueryRdr.Read())
+        {
+          int thisCategoryId = categoryQueryRdr.GetInt32(0);
+          string categoryName = categoryQueryRdr.GetString(1);
+          Category foundCategory = new Category(categoryName, thisCategoryId);
+          categories.Add(foundCategory);
+        }
+        categoryQueryRdr.Dispose();
+      }
+      conn.Close();
+      if (conn != null)
+      {
+        conn.Dispose();
+      }
+      return categories;
+    }
+
+    public void AddCategory(Category newCategory)
+    {
+      MySqlConnection conn = DB.Connection();
+      conn.Open();
+      var cmd = conn.CreateCommand() as MySqlCommand;
+      cmd.CommandText = @"INSERT INTO categories_items (category_id, item_id) VALUES (@CategoryId, @ItemId);";
+      MySqlParameter category_id = new MySqlParameter();
+      category_id.ParameterName = "@CategoryId";
+      category_id.Value = newCategory.GetId();
+      cmd.Parameters.Add(category_id);
+      MySqlParameter item_id = new MySqlParameter();
+      item_id.ParameterName = "@ItemId";
+      item_id.Value = _id;
+      cmd.Parameters.Add(item_id);
+      cmd.ExecuteNonQuery();
+
+      // More logic will go here.
+
+      conn.Close();
+      if (conn != null)
+      {
+        conn.Dispose();
+      }
+    }
+
+    //Our MySqlCommand now contains two statements; one to delete the Item's associated entry on the items table, and another to delete any entries on the join table that contain that Item's ID. 
+    public void Delete()
+    {
+      MySqlConnection conn = DB.Connection();
+      conn.Open();
+      var cmd = conn.CreateCommand() as MySqlCommand;
+      cmd.CommandText = @"DELETE FROM items WHERE id = @ItemId; DELETE FROM categories_items WHERE item_id = @ItemId;";
+      MySqlParameter itemIdParameter = new MySqlParameter();
+      itemIdParameter.ParameterName = "@ItemId";
+      itemIdParameter.Value = this.GetId();
+      cmd.Parameters.Add(itemIdParameter);
+      cmd.ExecuteNonQuery();
+      if (conn != null)
+      {
+        conn.Close();
       }
     }
   }
